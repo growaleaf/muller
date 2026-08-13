@@ -23,6 +23,7 @@ const state = {
   glazeLayers: [],      // [{id, parts}]
   viewIlluminant: 'daylight',
   lastVerdict: null,
+  blockedNote: null,    // { id, other, reason } — last tap refused for reacting with something already in the mix
 };
 
 (function restore() {
@@ -37,6 +38,7 @@ function resetBench() {
   state.mixSelections = [];
   state.glazeLayers = [];
   state.viewIlluminant = c ? c.illuminant : 'daylight';
+  state.blockedNote = null;
 }
 
 // ---------------- pure-ish helpers over the core ----------------
@@ -114,7 +116,11 @@ function renderBench() {
 
   const incompat = currentIncompatibilities();
   const warnEl = $('incompat-warning');
-  if (incompat.length) {
+  if (state.blockedNote) {
+    const n = state.blockedNote;
+    warnEl.style.display = 'block';
+    warnEl.textContent = `${G.pigmentById(n.id).name} won't go near the ${G.pigmentById(n.other).name} already on the bench — ${n.reason}`;
+  } else if (incompat.length) {
     warnEl.style.display = 'block';
     warnEl.textContent = `these two must never touch: ${incompat.map(p => `${G.pigmentById(p.a).name} + ${G.pigmentById(p.b).name} — ${p.reason}`).join('; ')}`;
   } else {
@@ -216,9 +222,16 @@ function cyclePigment(id) {
   if (G.isPigmentBanned(c, id)) return;
   const existing = state.mixSelections.find(m => m.id === id);
   if (!existing) {
-    if (state.mixSelections.some(m => G.isIncompatible(m.id, id))) return; // block, banner explains
+    const clashWith = state.mixSelections.find(m => G.isIncompatible(m.id, id));
+    if (clashWith) {
+      state.blockedNote = { id, other: clashWith.id, reason: G.findIncompatibilities([clashWith.id, id])[0].reason };
+      renderBench();
+      return;
+    }
+    state.blockedNote = null;
     state.mixSelections.push({ id, parts: 1, grind: 0 });
   } else if (existing.parts < 3) {
+    state.blockedNote = null;
     existing.parts++;
   } else {
     state.mixSelections = state.mixSelections.filter(m => m.id !== id);
@@ -246,6 +259,7 @@ function removeGlazeLayer(index) {
 function clearBench() {
   state.mixSelections = [];
   state.glazeLayers = [];
+  state.blockedNote = null;
   renderBench();
 }
 
@@ -328,6 +342,7 @@ if (new URLSearchParams(location.search).get('dev') === '1') {
       viewIlluminant: state.viewIlluminant,
       results: state.results.slice(),
       lastVerdict: state.lastVerdict,
+      blockedNote: state.blockedNote,
       incompatibilities: currentIncompatibilities(),
     }),
     goTo: (phase) => showScreen(phase),
